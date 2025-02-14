@@ -14,10 +14,10 @@ This repository focuses on exploring the latent space of atmospheric parameters 
 
 ## Project Structure
 
-Atmospheric-Latent-Space-Research/
-    ├── data/
-    ├── models/
-    ├── training/
-    ├── visualization/
-    ├── requirements.txt
-    └── README.md
+Atmospheric-Latent-Space-Research
+- data/
+- models/
+- training/
+- visualization/
+- requirements.txt
+- README.md
