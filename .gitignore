@@ -1,0 +1,60 @@
+# Python virtual environments
+vae_env/
+env/
+venv/
+ENV/
+
+# Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution/packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test/coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data files
+data/
+data/**/*.dat
+*.npy
+*.npz
+*.h5
+
+# Model files
+models/**/*.pth
+models/**/*.pt
+models/**/*.ckpt
+
+# Log files
+logs/
+*.log
+runs/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
