@@ -9,3 +9,7 @@ jupyter
 scikit-learn
 plotly
 tensorboard
+diffusers
+transformers
+accelerate
+datasets
