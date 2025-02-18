@@ -8,71 +8,12 @@ torch._six = six  # Monkey-patch torch._six for compatibility with torchvision
 import os
 import argparse
 import torch.optim as optim
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms, utils
+from torchvision import datasets, transforms
 
-# Import our VAE implementation. For MNIST, we use the simple, fully connected VAE.
+# Import our VAE implementation and the common training functions.
 from atmospheric_vae.models.vae.basic import SimpleVAE
-
-def loss_function(recon_x, x, mu, logvar):
-    """
-    Calculate the VAE loss as the sum of reconstruction loss and KL divergence.
-    """
-    # Reconstruction loss using binary cross entropy
-    BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
-    # KL divergence loss
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    return BCE + KLD
-
-def train(model, device, train_loader, optimizer, epoch, log_interval=100):
-    """
-    Train the VAE for one epoch.
-    """
-    model.train()
-    train_loss = 0
-    for batch_idx, (data, _) in enumerate(train_loader):
-        data = data.to(device)
-        # Flatten each 28x28 image into a vector of 784 elements
-        data = data.view(data.size(0), -1)
-        optimizer.zero_grad()
-        recon_batch, mu, logvar = model(data)
-        loss = loss_function(recon_batch, data, mu, logvar)
-        loss.backward()
-        train_loss += loss.item()
-        optimizer.step()
-
-        if batch_idx % log_interval == 0:
-            print(f"Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} "
-                  f"({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item() / len(data):.6f}")
-            
-            # Save a sample reconstruction (first batch only per epoch)
-            if batch_idx == 0:
-                n = min(data.size(0), 8)
-                # Concatenate original and reconstructed images for comparison
-                comparison = torch.cat([data[:n].view(-1, 1, 28, 28),
-                                        recon_batch[:n].view(-1, 1, 28, 28)])
-                os.makedirs("results", exist_ok=True)
-                utils.save_image(comparison.cpu(),
-                                 f"results/reconstruction_epoch_{epoch}.png",
-                                 nrow=n)
-    avg_loss = train_loss / len(train_loader.dataset)
-    print(f"====> Epoch: {epoch} Average loss: {avg_loss:.4f}")
-
-def test(model, device, test_loader):
-    """
-    Evaluate the VAE on the test dataset.
-    """
-    model.eval()
-    test_loss = 0
-    with torch.no_grad():
-        for data, _ in test_loader:
-            data = data.to(device)
-            data = data.view(data.size(0), -1)
-            recon, mu, logvar = model(data)
-            test_loss += loss_function(recon, data, mu, logvar).item()
-    test_loss /= len(test_loader.dataset)
-    print(f"====> Test set loss: {test_loss:.4f}")
+from atmospheric_vae.training.trainer import train_epoch, test_epoch
 
 def main():
     # Parse command-line arguments
@@ -107,8 +48,8 @@ def main():
     os.makedirs("results", exist_ok=True)
 
     for epoch in range(1, args.epochs + 1):
-        train(model, device, train_loader, optimizer, epoch, log_interval=args.log_interval)
-        test(model, device, test_loader)
+        train_epoch(model, device, train_loader, optimizer, epoch, log_interval=args.log_interval)
+        test_epoch(model, device, test_loader)
 
     if args.save_model:
         torch.save(model.state_dict(), "results/vae_mnist.pt")
