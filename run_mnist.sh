@@ -1,1 +1,1 @@
-python train_mnist.py --epochs 10 --batch-size 128 --save-model
+   python train_mnist.py --epochs 10 --batch-size 128 --save-model --model-type cnn --config-path atmospheric_vae/models/configs/cnn_config_mnist.json

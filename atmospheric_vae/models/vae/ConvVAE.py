@@ -4,79 +4,154 @@ import torch.nn.functional as F
 from .base import BaseVAE
 
 class CNNVAE(BaseVAE):
-    def __init__(self, latent_dim=2):
+    def __init__(self, config, latent_dim=20):
         """
-        Build a VAE using a CNN architecture, assuming the input dimensions are (batch, 2, 61, 61)
+        Build a CNN-based VAE with a configurable architecture.
+        The architecture is driven by a config dictionary so that users
+        can adjust the CNNVAE architecture without resorting to image resizing.
+        
         Args:
-            latent_dim (int): Dimension of the latent space, default is 2
+            config (dict): Dictionary containing configuration parameters for each layer.
+            latent_dim (int): Dimension of the latent space.
         """
         super(CNNVAE, self).__init__()
-        # Encoder: Convolutional layers + pooling layers
-        self.conv1 = nn.Conv2d(2, 8, kernel_size=3, stride=1, padding=0)    # (batch, 8, 59, 59)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=1)                  # (batch, 8, 58, 58)
-        self.conv2 = nn.Conv2d(8, 32, kernel_size=3, stride=1, padding=0)     # (batch, 32, 56, 56)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=0)     # (batch, 64, 27, 27)
-        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=0)    # (batch, 128, 25, 25)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)                    # (batch, 128, 12, 12)
-        self.conv5 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=0)    # (batch, 256, 5, 5)
+        self.config = config
 
-        # Compute the flattened dimension (256 * 5 * 5)
-        self.flatten_dim = 256 * 5 * 5
-        # Fully connected layers to generate the latent space's mean and log variance
+        # Encoder: create convolutional and pooling layers based on the config.
+        # For MNIST, we expect the images to have 1 channel (28x28).
+        in_channels = self.config.get("in_channels", 1)
+        self.conv1 = nn.Conv2d(
+            in_channels,
+            self.config.get("conv1_out", 8),
+            kernel_size=self.config.get("conv1_kernel", 3),
+            stride=self.config.get("conv1_stride", 1),
+            padding=self.config.get("conv1_padding", 1)
+        )
+        self.pool1 = nn.MaxPool2d(
+            kernel_size=self.config.get("pool1_kernel", 2),
+            stride=self.config.get("pool1_stride", 2)
+        )
+        self.conv2 = nn.Conv2d(
+            self.config.get("conv1_out", 8),
+            self.config.get("conv2_out", 16),
+            kernel_size=self.config.get("conv2_kernel", 3),
+            stride=self.config.get("conv2_stride", 1),
+            padding=self.config.get("conv2_padding", 1)
+        )
+        self.pool2 = nn.MaxPool2d(
+            kernel_size=self.config.get("pool2_kernel", 2),
+            stride=self.config.get("pool2_stride", 2)
+        )
+        self.conv3 = nn.Conv2d(
+            self.config.get("conv2_out", 16),
+            self.config.get("conv3_out", 32),
+            kernel_size=self.config.get("conv3_kernel", 3),
+            stride=self.config.get("conv3_stride", 1),
+            padding=self.config.get("conv3_padding", 1)
+        )
+        
+        # Use a dummy input to dynamically compute the flatten dimension.
+        input_height = self.config.get("input_height", 28)
+        input_width = self.config.get("input_width", 28)
+        dummy = torch.zeros(1, in_channels, input_height, input_width)
+        x = F.relu(self.conv1(dummy))
+        x = self.pool1(x)
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
+        x = F.relu(self.conv3(x))
+        self.flatten_dim = x.view(1, -1).size(1)  # For MNIST, expect 32*7*7 = 1568
+        
+        # Fully connected layers for the latent space.
         self.fc_mu = nn.Linear(self.flatten_dim, latent_dim)
         self.fc_logvar = nn.Linear(self.flatten_dim, latent_dim)
-
-        # Decoder: Reconstruct the original image size from the latent vector
-        # First, use a fully connected layer to reshape into the initial feature map for the convolutional layers
+        
+        # Decoder: fully connected layer to convert latent vector back to feature map.
         self.fc_decode = nn.Linear(latent_dim, self.flatten_dim)
-        # Transposed convolution layers to sequentially upsample the feature map to the original size
-        self.deconv1 = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=0)  # (batch, 128, ~11, ~11)
-        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')                      # Upsample to ~22×22
-        self.deconv2 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=1, padding=0)    # (batch, 64, ~24, ~24)
-        self.deconv3 = nn.ConvTranspose2d(64, 16, kernel_size=3, stride=2, padding=0)     # (batch, 16, ~49, ~49)
-        self.deconv4 = nn.ConvTranspose2d(16, 8, kernel_size=5, stride=1, padding=0)      # (batch, 8, ~53, ~53)
-        self.deconv5 = nn.ConvTranspose2d(8, 2, kernel_size=5, stride=1, padding=0)       # (batch, 2, ~57, ~57)
-        self.deconv6 = nn.ConvTranspose2d(2, 2, kernel_size=5, stride=1, padding=0)       # (batch, 2, 61, 61)
-
+        # The decoder_input_shape should be provided in the config.
+        # For MNIST with the above encoder, [32, 7, 7] is expected.
+        self.decoder_input_shape = self.config.get("decoder_input_shape", [32, 7, 7])
+        
+        # Create decoder layers based on the config.
+        # First transposed convolution block.
+        self.deconv1 = nn.ConvTranspose2d(
+            self.decoder_input_shape[0],
+            self.config.get("deconv1_out", 16),
+            kernel_size=self.config.get("deconv1_kernel", 3),
+            stride=self.config.get("deconv1_stride", 1),
+            padding=self.config.get("deconv1_padding", 1)
+        )
+        self.upsample1 = nn.Upsample(scale_factor=self.config.get("upsample1_scale", 2), mode='nearest')
+        # Second transposed convolution block.
+        self.deconv2 = nn.ConvTranspose2d(
+            self.config.get("deconv1_out", 16),
+            self.config.get("deconv2_out", 8),
+            kernel_size=self.config.get("deconv2_kernel", 3),
+            stride=self.config.get("deconv2_stride", 1),
+            padding=self.config.get("deconv2_padding", 1)
+        )
+        self.upsample2 = nn.Upsample(scale_factor=self.config.get("upsample2_scale", 2), mode='nearest')
+        # Final transposed convolution to reconstruct the image.
+        self.deconv3 = nn.ConvTranspose2d(
+            self.config.get("deconv2_out", 8),
+            self.config.get("deconv3_out", 1),
+            kernel_size=self.config.get("deconv3_kernel", 3),
+            stride=self.config.get("deconv3_stride", 1),
+            padding=self.config.get("deconv3_padding", 1)
+        )
+        
     def encode(self, x):
         """
-        Encode the input image into the latent space
+        Encode the input image into a latent vector.
+        
         Args:
-            x (torch.Tensor): Input data with shape (batch, 2, 61, 61)
+            x (torch.Tensor): Input image tensor with shape (batch, in_channels, H, W).
+            
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: The mean (mu) and log variance (logvar) of the latent space
+            Tuple[torch.Tensor, torch.Tensor]: Mean and log variance of the latent space.
         """
-        x = F.relu(self.conv1(x))   # (batch, 8, 59, 59)
-        x = self.pool1(x)           # (batch, 8, 58, 58)
-        x = F.relu(self.conv2(x))   # (batch, 32, 56, 56)
-        x = F.relu(self.conv3(x))   # (batch, 64, 27, 27)
-        x = F.relu(self.conv4(x))   # (batch, 128, 25, 25)
-        x = self.pool2(x)           # (batch, 128, 12, 12)
-        x = F.relu(self.conv5(x))   # (batch, 256, 5, 5)
-        x = x.view(-1, self.flatten_dim)
+        x = F.relu(self.conv1(x))
+        x = self.pool1(x)
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         logvar = self.fc_logvar(x)
         return mu, logvar
-
+    
     def decode(self, z):
         """
-        Reconstruct the input image from the latent vector
+        Decode the latent vector back to the image space.
+        
         Args:
-            z (torch.Tensor): Latent vector
+            z (torch.Tensor): Latent vector.
+            
         Returns:
-            torch.Tensor: Reconstructed image with shape (batch, 2, 61, 61)
+            torch.Tensor: Reconstructed image with shape (batch, out_channels, H, W).
         """
         x = self.fc_decode(z)
-        x = x.view(-1, 256, 5, 5)
-        x = F.relu(self.deconv1(x))  # (batch, 128, ~11, ~11)
-        x = self.upsample(x)         # (batch, 128, ~22, ~22)
-        x = F.relu(self.deconv2(x))  # (batch, 64, ~24, ~24)
-        x = F.relu(self.deconv3(x))  # (batch, 16, ~49, ~49)
-        x = F.relu(self.deconv4(x))  # (batch, 8, ~53, ~53)
-        x = F.relu(self.deconv5(x))  # (batch, 2, ~57, ~57)
-        # The final layer applies tanh to restrict the output between -1 and 1, consistent with the original data preprocessing
-        x = torch.tanh(self.deconv6(x))  # (batch, 2, 61, 61)
+        x = x.view(-1, self.decoder_input_shape[0], self.decoder_input_shape[1], self.decoder_input_shape[2])
+        x = F.relu(self.deconv1(x))
+        x = self.upsample1(x)
+        x = F.relu(self.deconv2(x))
+        x = self.upsample2(x)
+        # Using sigmoid to constrain the output between 0 and 1 (suitable for image data)
+        x = torch.sigmoid(self.deconv3(x))
         return x
+    
+    def forward(self, x):
+        """
+        Perform a full forward pass through the VAE: encode and then decode.
+        
+        Args:
+            x (torch.Tensor): Input tensor.
+            
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Reconstructed image, mean, and log variance.
+        """
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return self.decode(z), mu, logvar
 
 # For testing: perform a single forward pass
 if __name__ == "__main__":
