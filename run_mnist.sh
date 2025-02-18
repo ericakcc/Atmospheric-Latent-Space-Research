@@ -1,0 +1,1 @@
+python train_mnist.py --epochs 10 --batch-size 128 --save-model
