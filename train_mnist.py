@@ -16,6 +16,7 @@ from torchvision import datasets, transforms
 from atmospheric_vae.models.vae.basic import SimpleVAE
 from atmospheric_vae.models.vae.ConvVAE import CNNVAE
 from atmospheric_vae.training.trainer import train_epoch, test_epoch
+from atmospheric_vae.utils import utils
 
 def main():
     # Parse command-line arguments, including a new argument for model type and config path.
@@ -33,9 +34,18 @@ def main():
                         help="Path to the CNNVAE configuration JSON file (used when model-type is 'cnn')")
     args = parser.parse_args()
 
-    use_cuda = not args.no_cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
-    device = torch.device("cuda" if use_cuda else "cpu")
+
+    if not args.no_cuda and torch.cuda.is_available():
+        device = utils.Utils.get_device()
+    else:
+        device = torch.device("cpu")
+    print("Using device:", device)
+    if torch.cuda.is_available():
+        print("GPU count:", torch.cuda.device_count())
+        current_device = torch.cuda.current_device()
+        print("Current device index:", current_device)
+        print("Current device name:", torch.cuda.get_device_name(current_device))
 
     # MNIST dataset transform: for both models, we use ToTensor().
     # (Note: For CNNVAE, ensure that your trainer bypasses flattening so that the image shape remains
