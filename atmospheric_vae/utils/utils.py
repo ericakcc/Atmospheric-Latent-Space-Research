@@ -3,6 +3,7 @@ import sys
 import subprocess
 import os
 from typing import List, Tuple
+import numpy as np
 
 class Utils:
     @staticmethod
@@ -140,6 +141,39 @@ class Utils:
                 return torch.device(f'cuda:{gpu_id}')
         
         return torch.device('cpu')
+
+    @staticmethod
+    def process_terrain_data(data, verbose=True):
+        """
+        Process terrain-related data by setting non-terrain areas (NaN/Inf) to 0 and provide data statistics
+        
+        Args:
+            data (np.ndarray): Input raw data
+            verbose (bool): Whether to print statistical information
+        
+        Returns:
+            np.ndarray: Processed data
+        """
+        if verbose:
+            # Statistics for non-terrain areas in original data
+            print("Original data statistics:")
+            print(f"Non-terrain areas (NaN/Inf): {(np.isnan(data) | np.isinf(data)).sum()} pixels")
+            print(f"Total pixels: {data.size}")
+        
+        # Set non-terrain areas (NaN and Inf) to 0
+        processed_data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Calculate the ratio of valid terrain areas and value range
+        terrain_mask = processed_data != 0
+        if verbose:
+            terrain_ratio = np.count_nonzero(terrain_mask) / processed_data.size
+            print(f"\nTerrain coverage: {terrain_ratio:.2%}")
+            print(f"Data range in terrain areas:")
+            print(f"- Min value: {np.min(processed_data[terrain_mask]):.6f}")
+            print(f"- Max value: {np.max(processed_data[terrain_mask]):.6f}")
+            print(f"- Mean value: {np.mean(processed_data[terrain_mask]):.6f}")
+        
+        return processed_data
 
 if __name__ == "__main__":
     # Test GPU availability
