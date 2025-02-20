@@ -143,7 +143,7 @@ class Utils:
         return torch.device('cpu')
 
     @staticmethod
-    def process_terrain_data(data, verbose=True):
+    def process_terrain_data(data, verbose=False):
         """
         Process terrain-related data by setting non-terrain areas (NaN/Inf) to 0 and provide data statistics
         
