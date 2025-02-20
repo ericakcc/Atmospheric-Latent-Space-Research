@@ -1,0 +1,67 @@
+{
+    "training": {
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 1e-3,
+        "seed": 42,
+        "train_ratio": 0.8
+    },
+    "data": {
+        "data_dir": "data/dcape/",
+        "shape": [512, 768, 3, 94],
+        "dtype": "float32",
+        "cache_settings": {
+            "cache_size": 512,
+            "use_shared_cache": true,
+            "max_memory_usage_gb": 128
+        },
+        "dataloader_settings": {
+            "num_workers": 0,
+            "pin_memory": true
+        }
+    },
+    "model": {
+        "in_channels": 3,
+        "input_height": 512,
+        "input_width": 768,
+        "conv1_out": 16,
+        "conv1_kernel": 3,
+        "conv1_stride": 2,
+        "conv1_padding": 1,
+        "pool1_kernel": 1,
+        "pool1_stride": 1,
+        
+        "conv2_out": 32,
+        "conv2_kernel": 3,
+        "conv2_stride": 2,
+        "conv2_padding": 1,
+        "pool2_kernel": 1,
+        "pool2_stride": 1,
+        
+        "conv3_out": 64,
+        "conv3_kernel": 3,
+        "conv3_stride": 2,
+        "conv3_padding": 1,
+
+        "decoder_input_shape": [64, 64, 96],
+        
+        "deconv1_out": 32,
+        "deconv1_kernel": 3,
+        "deconv1_stride": 1,
+        "deconv1_padding": 1,
+        "upsample1_scale": 4,
+
+        "deconv2_out": 16,
+        "deconv2_kernel": 3,
+        "deconv2_stride": 1,
+        "deconv2_padding": 1,
+        "upsample2_scale": 2,
+
+        "deconv3_out": 3,
+        "deconv3_kernel": 3,
+        "deconv3_stride": 1,
+        "deconv3_padding": 1,
+        
+        "latent_dim": 20
+    }
+} 
