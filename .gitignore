@@ -63,6 +63,7 @@ Thumbs.db
 test_visualization/
 outputs/
 results/
+experiments/
 *.png
 *.jpg
 *.jpeg
