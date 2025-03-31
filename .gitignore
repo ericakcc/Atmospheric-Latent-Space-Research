@@ -58,3 +58,12 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+
+# Visualization and output directories
+test_visualization/
+outputs/
+results/
+*.png
+*.jpg
+*.jpeg
+*.gif
