@@ -20,6 +20,8 @@ class CNNVAE(BaseVAE):
         # Encoder: create convolutional and pooling layers based on the config.
         # For MNIST, we expect the images to have 1 channel (28x28).
         in_channels = self.config.get("in_channels", 1)
+        self.in_channels = in_channels  # 保存輸入通道數以確保解碼器輸出匹配
+        
         self.conv1 = nn.Conv2d(
             in_channels,
             self.config.get("conv1_out", 8),
@@ -91,9 +93,10 @@ class CNNVAE(BaseVAE):
         )
         self.upsample2 = nn.Upsample(scale_factor=self.config.get("upsample2_scale", 2), mode='nearest')
         # Final transposed convolution to reconstruct the image.
+        # 這裡確保輸出通道數與輸入通道數相匹配
         self.deconv3 = nn.ConvTranspose2d(
             self.config.get("deconv2_out", 8),
-            self.config.get("deconv3_out", 1),
+            self.config.get("deconv3_out", in_channels),  # 使用相同的輸入通道數作為輸出
             kernel_size=self.config.get("deconv3_kernel", 3),
             stride=self.config.get("deconv3_stride", 1),
             padding=self.config.get("deconv3_padding", 1)
@@ -128,6 +131,7 @@ class CNNVAE(BaseVAE):
             
         Returns:
             torch.Tensor: Reconstructed image with shape (batch, out_channels, H, W).
+                          where out_channels matches the input channels
         """
         x = self.fc_decode(z)
         x = x.view(-1, self.decoder_input_shape[0], self.decoder_input_shape[1], self.decoder_input_shape[2])
@@ -137,6 +141,11 @@ class CNNVAE(BaseVAE):
         x = self.upsample2(x)
         # Using sigmoid to constrain the output between 0 and 1 (suitable for image data)
         x = torch.sigmoid(self.deconv3(x))
+        
+        # 添加調試信息，確認通道數
+        if hasattr(self, 'debug_mode') and self.debug_mode:
+            print(f"decode output shape: {x.shape}, expected in_channels: {self.in_channels}")
+        
         return x
     
     def forward(self, x):
@@ -149,9 +158,16 @@ class CNNVAE(BaseVAE):
         Returns:
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Reconstructed image, mean, and log variance.
         """
+        input_shape = x.shape
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
+        recon = self.decode(z)
+        
+        # 添加調試信息，確認輸入和輸出的形狀是否匹配
+        if hasattr(self, 'debug_mode') and self.debug_mode:
+            print(f"Input shape: {input_shape}, Output shape: {recon.shape}")
+        
+        return recon, mu, logvar
 
 # For testing: perform a single forward pass
 if __name__ == "__main__":
