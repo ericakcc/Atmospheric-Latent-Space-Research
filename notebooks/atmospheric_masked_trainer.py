@@ -18,19 +18,41 @@ def masked_vae_loss_function(recon_x, x, mu, logvar, mask, config):
     返回:
         計算得到的總損失
     """
+    # 檢查並修正任何異常值
+    recon_x = torch.clamp(recon_x, min=0.0, max=1.0)  # 確保重建值在[0,1]範圍內
+    
+    # 檢查並處理NaN和Inf值
+    if torch.isnan(recon_x).any() or torch.isinf(recon_x).any():
+        recon_x = torch.nan_to_num(recon_x, nan=0.0, posinf=1.0, neginf=0.0)
+    
+    if torch.isnan(x).any() or torch.isinf(x).any():
+        x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=0.0)
+    
     # 對重建和原始數據應用掩碼
     masked_recon = recon_x * mask
     masked_x = x * mask
     
     # 計算有效像素數量用於標準化
-    valid_pixels = mask.sum() + 1e-8  # 添加小常數以避免除以零
+    valid_pixels = torch.clamp(mask.sum(), min=1e-8)  # 添加小常數以避免除以零
     
     loss = 0
     
     # BCE損失（僅在有效區域）
     if config.training_config["loss_weights"]["bce"] > 0:
-        BCE = F.binary_cross_entropy(masked_recon, masked_x, reduction='sum') / valid_pixels
-        loss += config.training_config["loss_weights"]["bce"] * BCE
+        try:
+            # 再次確保輸入到BCE的值在[0,1]範圍內
+            masked_recon_safe = torch.clamp(masked_recon, min=0.0, max=1.0)
+            masked_x_safe = torch.clamp(masked_x, min=0.0, max=1.0)
+            
+            BCE = F.binary_cross_entropy(masked_recon_safe, masked_x_safe, reduction='sum') / valid_pixels
+            loss += config.training_config["loss_weights"]["bce"] * BCE
+        except RuntimeError as e:
+            print(f"BCE計算出錯: {str(e)}")
+            print(f"掩碼後的重建範圍: [{masked_recon.min().item()}, {masked_recon.max().item()}]")
+            print(f"掩碼後的原始數據範圍: [{masked_x.min().item()}, {masked_x.max().item()}]")
+            # 出錯時使用MSE代替
+            MSE = F.mse_loss(masked_recon, masked_x, reduction='sum') / valid_pixels
+            loss += config.training_config["loss_weights"]["bce"] * MSE
     
     # MSE損失（僅在有效區域）
     if config.training_config["loss_weights"]["mse"] > 0:
@@ -42,8 +64,12 @@ def masked_vae_loss_function(recon_x, x, mu, logvar, mask, config):
         L1 = F.l1_loss(masked_recon, masked_x, reduction='sum') / valid_pixels
         loss += config.training_config["loss_weights"]["l1"] * L1
     
-    # KL散度
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
+    # KL散度 - 處理可能的NaN或Inf
+    logvar_safe = torch.clamp(logvar, max=20)  # 避免exp爆炸
+    mu_safe = torch.clamp(mu, min=-10, max=10)  # 避免平方爆炸
+    
+    KLD = -0.5 * torch.sum(1 + logvar_safe - mu_safe.pow(2) - logvar_safe.exp())
+    KLD = torch.clamp(KLD, min=0.0) / x.size(0)  # 確保KLD非負
     
     # 總損失 = 重建損失 + beta * KL散度
     return loss + config.training_config["beta"] * KLD
@@ -235,7 +261,21 @@ def visualize_masked_reconstructions(model, data_loader, device, output_dir, max
             mask = resize_transform(mask)
         
         # 對數據進行編碼和解碼
-        recon, mu, logvar = model(data)
+        # 檢查是否是UNetVAE模型，它的encode返回三個值
+        is_unet_vae = 'CNNVAE_UNet' in model.__class__.__name__
+
+        # 編碼
+        if is_unet_vae:
+            mu, logvar, enc_feats = model.encode(data)
+        else:
+            mu, logvar = model.encode(data)
+        
+        # 從編碼生成重建
+        z = model.reparameterize(mu, logvar)
+        if is_unet_vae:
+            recon = model.decode(z, enc_feats)
+        else:
+            recon = model.decode(z)
         
         # 限制樣本數量
         n = min(data.size(0), max_samples)
@@ -248,8 +288,17 @@ def visualize_masked_reconstructions(model, data_loader, device, output_dir, max
         unmasked_recon = recon[:n]
         
         # 根據潛在空間變量生成樣本
-        z = torch.randn_like(mu[:n])
-        samples = model.decode(z)
+        z_random = torch.randn_like(mu[:n])
+        
+        # 處理UNetVAE情況 - 隨機潛在向量的解碼需要特徵
+        if is_unet_vae:
+            # 對於UNetVAE模型，我們使用已有的重建而不是從隨機潛在向量生成
+            # 因為我們無法從隨機向量得到enc_feats
+            samples = unmasked_recon
+            print("注意：UNetVAE模型使用重建作為樣本，因為無法從隨機潛在向量生成樣本")
+        else:
+            # 標準VAE可以從隨機潛在向量生成
+            samples = model.decode(z_random)
         
         # 確保掩碼可以應用到樣本上
         if samples.shape[1] == mask[:n].shape[1]:

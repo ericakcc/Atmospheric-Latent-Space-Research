@@ -7,9 +7,8 @@ from torch.utils.data import DataLoader
 # 設置環境變量，限制只使用0號GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-# 更新導入，添加UNetVAE模型
-from atmospheric_vae.models.vae.ConvVAE import CNNVAE
-from atmospheric_vae.models.vae.UNetVAE import CNNVAE_UNet
+# 導入模型和工具
+from atmospheric_vae.models.vae.Unet_without_skipconnect import CNNVAE_UNet
 from atmospheric_vae.config.experiment_config import ExperimentConfig
 from atmospheric_vae.utils.experiment_logger import ExperimentLogger
 
@@ -20,8 +19,8 @@ from notebooks.atmospheric_masked_trainer import train_masked_epoch, test_masked
 def main():
     # 創建實驗配置
     config = ExperimentConfig()
-    config.experiment_name = "masked_unet_vae_test"
-    config.description = "使用地形掩碼的UNet-VAE模型，僅使用少量數據"
+    config.experiment_name = "masked_unet_noskip_test"
+    config.description = "使用地形掩碼的UNet-VAE模型（無跳躍連接版本），測試版本"
     
     # 獲取數據集的基本信息以確保配置與數據集一致
     print("加載數據集樣本以檢查形狀...")
@@ -68,29 +67,23 @@ def main():
         input_height = 128
         input_width = 192
     
-    # 更新配置 - 這裡我們使用專為UNetVAE設計的配置
+    # 更新配置
     config.model_config.update({
         "latent_dim": 64,  # 潛在空間維度
         "in_channels": input_channels,
         "input_height": input_height,
         "input_width": input_width,
-        # UNetVAE不需要這些參數，它使用自己的UNet塊結構
-        # "conv1_out": 32,
-        # "conv2_out": 64,
-        # "conv3_out": 128,
-        # "decoder_input_shape": [128, 64, 96],
-        # "deconv3_out": input_channels
     })
     
     config.training_config.update({
-        "batch_size": 4,  # 減少批次大小以加快測試速度
-        "learning_rate": 1e-4,
-        "epochs": 10,     # 減少訓練epoch數
-        "beta": 0.001,
+        "batch_size": 8,  # 使用較小的批次大小以提高穩定性
+        "learning_rate": 5e-5,  # 使用較小的學習率
+        "epochs": 200,     
+        "beta": 0.0001,  # 降低KL散度的權重，以增加重建準確性
         "loss_weights": {
-            "bce": 1.0,
-            "mse": 1.0,        
-            "l1": 0.1          
+            "bce": 0.5,  # 降低BCE權重，以減少可能的數值不穩定
+            "mse": 1.0,  # 主要使用MSE損失  
+            "l1": 0.3    # 增加L1損失權重，改善細節      
         }
     })
     
@@ -118,7 +111,7 @@ def main():
         dtype=np.float32,
         train_ratio=0.8,
         seed=42,
-        max_samples=10  # 限制每個文件只使用前10個時間點
+        # max_samples=10  # 限制每個文件只使用前10個時間點
     )
     
     # 創建調整大小的轉換
@@ -143,8 +136,7 @@ def main():
         pin_memory=True
     )
     
-    # 創建模型和優化器 - 改用UNetVAE模型
-    # model = CNNVAE(config=config.model_config).to(device)
+    # 創建無跳躍連接的UNet VAE模型
     model = CNNVAE_UNet(config=config.model_config).to(device)
     
     # 設置調試模式，在第一個epoch中檢查形狀
@@ -159,7 +151,7 @@ def main():
     print(f"開始訓練，配置: {config.experiment_name}")
     print(f"模型配置: {config.model_config}")
     print(f"訓練配置: {config.training_config}")
-    print(f"模型類型: CNNVAE_UNet")
+    print(f"模型類型: UNet VAE (無跳躍連接)")
     
     # 檢查一個批次數據的形狀
     print("檢查數據批次的形狀...")
